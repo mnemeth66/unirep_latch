@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python3
 # coding: utf-8
 
 # ## How to use the UniRep mLSTM "babbler". This version demonstrates the 64-unit and the 1900-unit architecture.
@@ -27,7 +27,7 @@ import subprocess
 os.chdir("/root")
 
 # Set seeds
-tf.seet_random_seed(42)
+tf.set_random_seed(42)
 np.random.seed(42)
 
 if USE_FULL_1900_DIM_MODEL:

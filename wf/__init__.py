@@ -2,6 +2,8 @@ import subprocess
 from enum import Enum
 from pathlib import Path
 from typing import List, Union
+import os
+import sys
 
 from latch import large_task, medium_task, small_task, workflow
 from latch.types import LatchDir, LatchFile
@@ -12,18 +14,9 @@ from typing import Optional
 def unirep_tutorial(
     use_full_1900_dim_model: bool = False,
     ) -> LatchDir:
-    print("INIZIO")
     local_dir = "/root/local_dir/"
     remote_dir = "latch:///test_unirep/"
-    _cmd = [
-        "python3",
-        "tutorial.py",
-        str(use_full_1900_dim_model)
-        ]
-    print("DURANTE")
-
-    subprocess.run(_cmd)
-    print("FINE")
+    os.system(f"conda run -n unirep /root/tutorial.py {str(use_full_1900_dim_model)}")    
     return LatchDir(local_dir, remote_dir)
 
 @workflow
