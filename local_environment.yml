@@ -1,0 +1,7 @@
+name: latch-unirep
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - latch
+    - biopython
