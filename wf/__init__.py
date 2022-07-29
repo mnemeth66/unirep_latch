@@ -3,15 +3,11 @@ from enum import Enum
 from pathlib import Path
 import os
 import sys
-# print(os.system("ls ."))
-# print(os.system("ls /root"))
-print(os.system("$PATH"))
-print(os.system("conda env list"))
 from Bio import SeqIO
 
-from latch import large_task, medium_task, small_task, workflow
+from latch import large_task, medium_task, small_task, workflow, create_conditional_section
 from latch.types import LatchDir, LatchFile
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 
 
 class Application(Enum):
@@ -19,11 +15,16 @@ class Application(Enum):
     variant_prediction = "Variant Fitness Prediction"
     babble = "Babble"
 
+@small_task
+def check_enum(
+    application: Application,
+) -> Tuple[bool, bool]:
+    return application == Application.protein_rep, application == Application.babble
 
 @small_task
 def get_seq_from_latchfile(
     sequence: Union[str, LatchFile],
-) -> (str, str):
+) -> Tuple[str, str]:
     if isinstance(sequence, LatchFile):
         local_path = Path(sequence).resolve()
         output_filename = local_path.stem
@@ -33,30 +34,45 @@ def get_seq_from_latchfile(
         return sequence, "protein"
 
 @small_task
-def unirep_task(
+def rep_task(
     sequence: str,
     output_filename: str,
     use_full_1900_dim_model: bool,
-    ) -> LatchDir:
+    output_dir: Optional[LatchDir],
+) -> LatchDir:
     local_dir = "/root/outputs/"
     if not os.path.exists(local_dir):
         os.mkdir(local_dir)
-    remote_dir = "latch:///unirep/"
-    path = "/root/scripts/var_predict.py"
-#     USE_FULL_1900_DIM_MODEL = sys.argv[1] # if 1 (True) use 1900 dimensional model, else use 64 dimensional one.
-    # OUTPUT_DIR = sys.argv[2]
-    # SEQ = sys.argv[3]
-    # OUTPUT_NAME = sys.argv[4]
-    # os.system("conda run -n unirep scripts/var_predict.py")
-    os.system(f"conda run -n unirep scripts/get_rep.py {use_full_1900_dim_model} {local_dir} {sequence} {output_filename}")
+    remote_dir = output_dir.remote_directory if output_dir else "latch:///unirep/"
+    path = "scripts/get_rep.py"
+    os.system(f"conda run -n unirep {path} {use_full_1900_dim_model} {local_dir} {sequence} {output_filename}")
+    return LatchDir(local_dir, remote_dir)
 
+@small_task
+def babble_task(
+    sequence: str,
+    output_filename: str,
+    use_full_1900_dim_model: bool,
+    output_dir: Optional[LatchDir],
+    length: Optional[int],
+    temp: Optional[float],
+) -> LatchDir:
+    local_dir = "/root/outputs/"
+    if not os.path.exists(local_dir):
+        os.mkdir(local_dir)
+    remote_dir = output_dir.remote_directory if output_dir else "latch:///unirep/"
+    path = "scripts/babble.py"
+    os.system(f"conda run -n unirep {path} {use_full_1900_dim_model} {local_dir} {sequence} {output_filename} {length} {temp}")
     return LatchDir(local_dir, remote_dir)
 
 @workflow
 def unirep(
     sequence: Union[str, LatchFile],
+    application: Application,
+    output_dir: Optional[LatchDir],
     use_full_1900_dim_model: bool = False,
-    application: Application = Application.protein_rep,
+    length: Optional[int] = int(250),
+    temp: Optional[float] = 1.0,
     ) -> LatchDir:
 
     """
@@ -72,20 +88,24 @@ def unirep(
     # This Workflow 
     This workflow gives the user access to the following applications:
     - generating protein representations from the mLSTM model
-    - [IN PROGRESS] "babbling": using generative modeling to synthesize sequences from a seed
+    - "babbling": using generative modeling to synthesize sequences from a seed
     - [FUTURE] variant prediction using UniRep representations
+    - [FUTURE, all] multiple sequences at once
 
     ## Inputs
-    - `sequence`: A string or LatchFile containing a protein sequence.
+    - `sequence`: A string or FASTA file containing a protein sequence.
     - `use_full_1900_dim_model`: A boolean indicating whether to use the 1900 dimensional model or the 64 dimensional model.
-    - `application`: A string indicating which application to use.
+    - `application`: A dropdown indicating which application to use.
         - `UniRep/UniRep Fusion`: Generate a protein representation.
-        - `Variant Fitness Prediction`: Predict variant fitness.
         - `Babble`: Synthesize sequences from a seed.
+        - `Variant Fitness Prediction`: Predict variant fitness.
+    - `length`: (Default 250) An integer indicating the length of the sequence to generate (including the original protein length). 
+    - `temperature`: (Default 1) A float between 0 and 1 indicating how noisy the babble should be. 1 is the noisiest.
 
     ## Outputs
     - `unirep/{protein_name}_unirep.np`: A numpy array containing the UniRep representation of the protein.
     - `unirep/{protein_name}_unirep_fusion.np`: A numpy array containing the UniRep Fusion representation of the protein.
+    - `unirep/{protein_name}_babble.txt`: A text file containing the babble from a seed protein.
 
     ## License
     Copyright 2018, 2019 Ethan Alley, Grigory Khimulya, Surojit Biswas
@@ -93,6 +113,20 @@ def unirep(
     All the model weights are licensed under the terms of Creative Commons Attribution-NonCommercial 4.0 International License. To view a copy of this license, visit http://creativecommons.org/licenses/by-nc/4.0/ or send a letter to Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 
     Otherwise the code in this repository is licensed under the terms of [GPL v3](https://www.gnu.org/licenses/gpl-3.0.html) as specified by the gpl.txt file.
+
+    ## Contact
+    If you have any questions about the workflow, contact mnemeth6@berkeley.edu.
+    For questions about the models, contact the authors.
+
+    __metadata__:
+        display_name: UniRep
+        author:
+            name: Church Lab
+            email: 
+            github:
+        repository: https://github.com/churchlab/UniRep
+        license:
+            id: GPLv3
     Args:
         sequence:
             A string or LatchFile containing a protein sequence.
@@ -106,17 +140,46 @@ def unirep(
             What application of the UniRep model to use.
             __metadata__:
                 display_name: Application
+        output_dir:
+            A LatchDir indicating the directory to save the output files to.
+            __metadata__:
+                display_name: (Optional) Output Directory
+        length:
+            Length of the sequence to generate (including original protein length). Default: 250
+            __metadata__:
+                display_name: (Babble) Length
+        temp:
+            How noisy the babble should be. Default: 1
+            __metadata__:
+                display_name: (Babble) Temperature
         
     """
     (seq, filename) = get_seq_from_latchfile(sequence=sequence)
-    return unirep_task(
-        sequence=seq,
-        output_filename=filename,
-        use_full_1900_dim_model=use_full_1900_dim_model
-        )
-    # return t1()
+    (rep, babble) = check_enum(application=application)
+    return (
+        create_conditional_section("application")
+        .if_((rep.is_true())).then(
+            rep_task(
+                sequence=seq,
+                output_filename=filename,
+                use_full_1900_dim_model=use_full_1900_dim_model,
+                output_dir=output_dir,
+                ))
+        .elif_((babble.is_true())).then(
+            babble_task(
+                sequence=seq,
+                output_filename=filename,
+                use_full_1900_dim_model=use_full_1900_dim_model,
+                output_dir=output_dir,
+                length=length,
+                temp=temp,
+                ))
+        .else_().fail("Variant Prediction isn't implemented yet.")
+    )
 
 if __name__ == "__main__":
     unirep(
         sequence='GGVA',
+        application=Application.protein_rep,
+        output_dir=LatchDir("outputs")
     )

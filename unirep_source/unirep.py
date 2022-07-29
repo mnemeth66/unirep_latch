@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import sys
 sys.path.append('../')
-from data_utils import aa_seq_to_int, int_to_aa, bucketbatchpad
+from unirep_source.data_utils import aa_seq_to_int, int_to_aa, bucketbatchpad
 import os
 
 # Helpers
