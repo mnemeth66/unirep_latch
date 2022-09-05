@@ -16,7 +16,7 @@ if __name__ == "__main__":
     tf.set_random_seed(42)
     np.random.seed(42)
 
-    if USE_FULL_1900_DIM_MODEL:
+    if USE_FULL_1900_DIM_MODEL == 'True':
         # Sync relevant weight files
         subprocess.run(["aws", "s3", "sync", "--no-sign-request","--quiet", "s3://unirep-public/1900_weights/", "1900_weights/"])
 

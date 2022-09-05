@@ -1,4 +1,4 @@
-FROM 812206152185.dkr.ecr.us-west-2.amazonaws.com/latch-base:02ab-main
+FROM 812206152185.dkr.ecr.us-west-2.amazonaws.com/latch-base:6839-main
 
 ###### Get conda and download dependencies into it
 RUN apt-get install -y curl unzip
@@ -11,13 +11,14 @@ RUN curl -L -O \
 
 # Create the environment
 ENV PATH /root/mambaforge/bin:$PATH
-COPY task_environment.yml requirements.txt /root/
+COPY task_environment.yml /root/
 RUN . /root/mambaforge/etc/profile.d/conda.sh &&\
     . /root/mambaforge/etc/profile.d/mamba.sh &&\
     mamba activate base &&\
     mamba env create -f task_environment.yml 
 
 # Download local dependencies, include latch so that it caches
+COPY requirements.txt /root/
 RUN python3 -m pip install -r requirements.txt
 ######
 
@@ -28,6 +29,9 @@ COPY data /root/data/
 COPY unirep_source /root/unirep_source/
 RUN chmod +x /root/scripts/*.py
 ######
+
+RUN echo 'installing modified latch '
+# RUN python3 -m pip install --upgrade /root/data/latch-1.15.0-py3-none-any.whl
 
 # Required commands
 ######

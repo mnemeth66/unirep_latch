@@ -1,3 +1,4 @@
 latch
 biopython
 requests
+jax-unirep
