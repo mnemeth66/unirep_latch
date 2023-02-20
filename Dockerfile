@@ -1,4 +1,6 @@
-FROM 812206152185.dkr.ecr.us-west-2.amazonaws.com/latch-base:6839-main
+FROM 812206152185.dkr.ecr.us-west-2.amazonaws.com/latch-base:ace9-main
+run pip install latch==2.13.1
+run mkdir /opt/latch
 
 ###### Get conda and download dependencies into it
 RUN apt-get install -y curl unzip
@@ -22,23 +24,17 @@ COPY requirements.txt /root/
 RUN python3 -m pip install -r requirements.txt
 ######
 
-# Copy scripts, data, and other files to the container
-######
-COPY scripts /root/scripts/
-COPY data /root/data/
-COPY unirep_source /root/unirep_source/
-RUN chmod +x /root/scripts/*.py
-######
-
-RUN echo 'installing modified latch '
-# RUN python3 -m pip install --upgrade /root/data/latch-1.15.0-py3-none-any.whl
-
 # Required commands
 ######
-COPY wf /root/wf/
+# copy all code from package (use .dockerignore to skip files)
+COPY . /root/
+
+# Enable scripts
+######
+RUN chmod +x /root/scripts/*.py
+RUN chmod +x /root/test_scripts/*.py
+
+# latch internal tagging system + expected root directory --- changing these lines will break the workflow
 ARG tag
 ENV FLYTE_INTERNAL_IMAGE $tag
-RUN sed -i 's/latch/wf/g' flytekit.config
-RUN python3 -m pip install --upgrade latch
 WORKDIR /root
-######
