@@ -1,3 +1,4 @@
+# Imports
 from enum import Enum
 from pathlib import Path
 import os
@@ -12,6 +13,7 @@ import pickle as pkl
 from latch import large_task, medium_task, small_task, workflow, create_conditional_section
 from latch.types import LatchDir, LatchFile
 from latch.resources.launch_plan import LaunchPlan
+from latch.functions.messages import message
 from typing import Optional, List, Union, Tuple
 
 # Allow extended amino acids: https://en.wikipedia.org/wiki/FASTA_format#Sequence_representation 
@@ -46,6 +48,8 @@ def get_seqs_from_inputs(
     """
     seqs = []
     latchfile_paths = []
+    if sequence is None:
+        return []
     # for seq in sequence, print string if str or print local_path if latchfile
     for seq in sequence:
         try:
@@ -75,9 +79,21 @@ def get_seqs_from_inputs(
     print(f"unrolling {len(latchfile_paths)} latchfiles")
     for latchfile_path in latchfile_paths:
         output_filename = latchfile_path.stem
-        for record in SeqIO.parse(latchfile_path, "fasta"):
-            seqs.append([str(record.seq), output_filename + "_" + str(record.id)])
+        
+        # Fasta file
+        if latchfile_path.suffix == '.fasta':
+            for record in SeqIO.parse(latchfile_path, "fasta"):
+                seqs.append([str(record.seq), output_filename + "_" + str(record.id)])
+        
+        # Text file
+        elif latchfile_path.suffix == '.txt':
+            with open(latchfile_path, 'r') as f:
+                for line in f:
+                    seq = line.strip()
+                    seq_name = hashlib.sha256(seq.encode('utf-8')).hexdigest()[:10]
+                    seqs.append([seq, output_filename + "_" + seq_name])
 
+        # CSV file
     return seqs
 
 @small_task
@@ -88,9 +104,14 @@ def get_holdouts(
     A wrapper around get_seqs_from_inputs to account for holdout sequences being optional,
     and working with Type.Optional.
     If no sequences are returned, return None rather than an empty list.
+
+    # [TODO] Figure out how to get beneath the @task wrappers to test tasks. Since
+    # get_holdout calls get_seqs_from_inputs, for now I just made it call the underlying
+    # function directly. This might also be better so it doesn't spin up a new node for such
+    # a small function.
     """
     if sequence is not None:
-        seqs = get_seqs_from_inputs(sequence)
+        seqs = get_seqs_from_inputs.__wrapped__(sequence=sequence)
         if len(seqs) > 0:
             return seqs
     return None
@@ -104,7 +125,8 @@ def evotune_task(
     run_name: str,
     holdouts: Optional[List[str]],
 ) -> LatchDir:
-
+    message(typ='info', data={'title': 'Application: Evotune', 'body': 'Evolutionary tuning of UniRep using your input sequences.'})
+    # Parameters
     local_dir = Path("/root/outputs/")
     local_dir.mkdir(exist_ok=True)
     local_dir = str(local_dir)
@@ -147,7 +169,8 @@ def rep_task(
     model_params: Optional[LatchDir],
     run_name: str,
 ) -> LatchDir:
-
+    message(typ='info', data={'title': 'Application: Rep', 'body': 'Getting protein representations'})
+    # Parameters
     local_dir = Path("/root/outputs/")
     local_dir.mkdir(exist_ok=True)
     local_dir = str(local_dir)
@@ -196,7 +219,8 @@ def babble_task(
     length: Optional[int],
     temp: Optional[float],
 ) -> LatchDir:
-
+    message(typ='info', data={'title': 'Application: Babble', 'body': f'Babbling new protein of length {length} from your input sequences.'})
+    # Parameters
     local_dir = Path("/root/outputs/")
     local_dir.mkdir(exist_ok=True)
     local_dir = str(local_dir)
@@ -217,7 +241,7 @@ def babble_task(
 
 @workflow
 def unirep(
-    sequence: Optional[List[Union[str, LatchFile, LatchDir]]],
+    sequence: Optional[List[Union[str, LatchFile, str]]],
     application: Application,
     run_name: str = str(date.today()),
     model_size: ModelSize = ModelSize.small,
@@ -283,7 +307,7 @@ def unirep(
 
     ## Contact
     If you have any questions about the workflow, contact mnemeth6@berkeley.edu.
-    For questions about the models, contact the authors.
+    For questions about the models, contact the original authors.
 
     __metadata__:
         display_name: UniRep
@@ -360,38 +384,3 @@ def unirep(
                 ))
         .else_().fail("Variant Prediction isn't implemented yet.")
     )
-
-def main():
-    unirep(
-        sequence=['GGVA', 'GGVB', 'GGVH'],
-        application=Application.protein_rep,
-        length=5,
-        run_name='dubbadoo',
-    )
-# if __name__ == "__main__":
-#     unirep(
-#         sequence='GGVA',
-#         application=Application.babble,
-#         length=10,
-#         run_name='yodeleyheehoo',
-#     )
-
-# LaunchPlan(
-#     unirep,
-#     "Sample UniRep",
-#     {
-#         "sequence":[LatchFile("s3://latch-public/test-data/3192/data/cas9.fasta")],
-#         "application":Application.protein_rep,
-#         "length":5,
-#     },
-# )
-
-# LaunchPlan(
-#     unirep,
-#     "Sample Babble",
-#     {
-#         "sequence":['LATCH'],
-#         "application":Application.babble,
-#         "length":10,
-#     },
-# )

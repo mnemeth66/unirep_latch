@@ -62,8 +62,12 @@ if __name__ == "__main__":
         outputs.append(check_valid_and_get_babble(seq))
     
     # Write results to csv file with headers 'name', 'seq', 'babble'
+    # Only add name, seq, babble if it is the file does not exist yet
+    babble_outputs_path = os.path.join(OUTPUT_DIR, "babble_results.csv")
+    if not os.path.exists(babble_outputs_path):
+        with open(babble_outputs_path, 'w') as f:
+            f.write("name,seq,babble\n")
     with open(os.path.join(OUTPUT_DIR, 'babble_results.csv'), 'a') as f:
-        f.write('name, seq ,babble\n')
         for output in outputs:
             if output[2] is not None:
                 f.write(output[1] + ',' + output[0] + ',' + output[2] + '\n')

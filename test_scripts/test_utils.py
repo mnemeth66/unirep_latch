@@ -34,6 +34,13 @@ class TestInputs(unittest.TestCase):
         seqs = test_seqs_from_inputs(sequence=[LatchFile('/root/test_scripts/test_data/seqs.fasta'), LatchFile('/root/test_scripts/test_data/seqs.txt')])
         self.assertEqual(seqs, [['LATCH', 'seqs_protein1'], ['BIO', 'seqs_protein2'], ['LATCH', 'seqs_0776181c35'], ['BIO', 'seqs_13a4f1d101']])
 
+    def test_no_inputs(self):
+        seqs = test_seqs_from_inputs(sequence=[])
+        self.assertEqual(seqs, [])
+
+    def test_none(self):
+        seqs = test_seqs_from_inputs(sequence=None)
+        self.assertEqual(seqs, [])
 
 class TestHoldouts(unittest.TestCase):
     # [TODO] Figure out how to get beneath the @task wrappers to test tasks. Since
@@ -46,7 +53,7 @@ class TestHoldouts(unittest.TestCase):
 
     def test_no_inputs(self):
         seqs = test_get_holdouts(sequence=[])
-        self.assertEqual(seqs, None)
+        self.assertIsNone(seqs)
 
     def test_none(self):
         seqs = test_get_holdouts(sequence=None)

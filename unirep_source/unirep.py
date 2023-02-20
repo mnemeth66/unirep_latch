@@ -445,7 +445,9 @@ class babbler1900():
             )
             # Just the actual character prediction
             pred_int = seed_samples[0, -1] + 1
-            seed = seed + int_to_aa[pred_int]
+            # Matthew Nemeth EDIT - check first to make sure length > len(seed) before adding
+            if length > len(seed):
+                seed = seed + int_to_aa[pred_int]
 
             for i in range(length - len(seed)):
                 pred_int, final_state_ = sess.run(
