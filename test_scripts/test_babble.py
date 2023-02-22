@@ -108,7 +108,7 @@ class TestBabble(unittest.TestCase):
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
-                model_params=LatchDir("/root/test_scripts/test_data/test_small_model/"),
+                model_params=LatchDir("/root/test_scripts/test_data/small_model.pkl"),
                 run_name="custom model test",
                 length=10,
                 temp=1,
@@ -130,7 +130,7 @@ class TestBabble(unittest.TestCase):
             test_babble(
                     seqs_and_names=[[protein, 'seqs_protein1']],
                     model_size=ModelSize.large,
-                    model_params=LatchDir("/root/test_scripts/test_data/test_model/"),
+                    model_params=LatchDir("/root/test_scripts/test_data/small_model.pkl"),
                     run_name="custom model test",
                     length=10,
                     temp=1,
