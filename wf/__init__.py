@@ -115,13 +115,12 @@ def get_holdouts(
         if len(seqs) > 0:
             return seqs
     return None
-    
 
 @small_task
 def evotune_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
-    model_params: Optional[LatchDir],
+    model_params: Optional[LatchFile],
     run_name: str,
     holdouts: Optional[List[str]],
 ) -> LatchDir:
@@ -132,7 +131,7 @@ def evotune_task(
     local_dir = str(local_dir)
     remote_dir = "latch:///unirep/" + run_name + "/"
     
-    model_size = int(model_size.value)
+    mlstm_size = int(model_size.value)
     if model_size == 64:
         from jax_unirep.evotuning_models import mlstm64 as mlstm
     elif model_size == 256:
@@ -140,14 +139,14 @@ def evotune_task(
     elif model_size == 1900:
         from jax_unirep.evotuning_models import mlstm1900 as mlstm
     else:
-        raise ValueError(f"Invalid model size: {model_size.value}")
+        raise ValueError(f"Invalid model size: {mlstm_size}")
     
     # Get parameters
     init_func, model_func = mlstm()
     if model_params is not None:
         params = jax_unirep.utils.load_params(folderpath=model_params.local_path)
     else:
-        params = jax_unirep.utils.load_params(paper_weights=model_size) 
+        params = jax_unirep.utils.load_params(paper_weights=mlstm_size)
 
     # Evotuning
     _, evotuned_params = jax_unirep.evotune(
@@ -166,7 +165,7 @@ def evotune_task(
 def rep_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
-    model_params: Optional[LatchDir],
+    model_params: Optional[LatchFile],
     run_name: str,
 ) -> LatchDir:
     message(typ='info', data={'title': 'Application: Rep', 'body': 'Getting protein representations'})
@@ -179,9 +178,11 @@ def rep_task(
     # Get the reps
     ## Load the model params
     params = None
+    mlstm_size = int(model_size.value)
     if model_params is not None:
         params = jax_unirep.utils.load_params(folderpath=model_params.local_path)
-    mlstm_size = int(model_size.value)
+    else:
+        params = jax_unirep.utils.load_params(paper_weights=mlstm_size)
     seqs = [seq_and_name[0] for seq_and_name in seqs_and_names]
     h_avg, h_final, c_final = jax_unirep.get_reps(seqs, params=params, mlstm_size=mlstm_size)
 
@@ -207,6 +208,28 @@ def rep_task(
     # Save h_avg as unireps.npy in local_dir
     np.save(os.path.join(local_dir, "unireps"), h_avg)
 
+    # Write the sequence names to output_name + 'sequences.txt' and output_name + 'sequences.fasta'
+    with open(os.path.join(local_dir, "sequences.txt"), "w") as f:
+        for seq_and_name in seqs_and_names:
+            f.write(seq_and_name[1] + "\n")
+
+    with open(os.path.join(local_dir, "sequences.fasta"), "w") as f:
+        for seq_and_name in seqs_and_names:
+            f.write(">" + seq_and_name[1] + "\n" + seq_and_name[0] + "\n")
+
+    # Write a little summary of results
+    with open(os.path.join(local_dir, "summary.txt"), "w") as f:
+        f.write(f"Your outputs are stored in several formats. \n\
+The list of input sequences are stored in the 'sequences.txt' and 'sequences.fasta' files. \n\
+The aggregated hidden representations are stored in the 'unireps.npy' file, indexed in the same \n\
+order as the input sequences. 'unireps.npy' should be a ({len(seqs_and_names)}, {model_size.value}) array.\n\
+There is a folder for each input sequence. In each folder is the input sequence, there is a\n\
+unirep representation, as well as the UniRep Fusion representation (a larger, slightly better representation). \n\
+-------------------------------------------------- \n\
+Model size: " + str(model_size.value) + "\n ")
+        if model_params is not None:
+            f.write("Model params: " + str(model_params.local_path) + "\n ")
+
     # Return LatchDir
     return LatchDir(local_dir, remote_dir)
 
@@ -214,11 +237,17 @@ def rep_task(
 def babble_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
-    model_params: Optional[LatchDir],
+    model_params: Optional[LatchFile],
     run_name: str,
     length: Optional[int],
     temp: Optional[float],
 ) -> LatchDir:
+    """
+    The reason we have to run this in a subprocess rather than calling a python function is because
+    we're using the native UniRep babbler, which includes a very old version of tensorflow which is 
+    incompatible with the latch package. So we need to run the babbler in a subprocess, with a separate
+    python interpreter.
+    """
     message(typ='info', data={'title': 'Application: Babble', 'body': f'Babbling new protein of length {length} from your input sequences.'})
     # Parameters
     local_dir = Path("/root/outputs/")
@@ -231,11 +260,14 @@ def babble_task(
         for seq_and_name in seqs_and_names:
             f.write(f"{seq_and_name[0]},{seq_and_name[1]}\n")
 
-    # Run babble
-    script_path = "scripts/babble.py"
+    # Extract model parameters from pkl file
+    from scripts.babble import pkl_to_model
     model_path = "None"
     if model_params is not None:
-        model_path = model_params.local_path
+        model_path = pkl_to_model(model_params.local_path)
+
+    # Run babble
+    script_path = "scripts/babble.py"
     subprocess.run(f"conda run -n unirep {script_path} {model_size.value} {local_dir} {length} {temp} seqs.csv {model_path}".split(), check=True)
     return LatchDir(local_dir, remote_dir)
 
@@ -245,7 +277,7 @@ def unirep(
     application: Application,
     run_name: str = str(date.today()),
     model_size: ModelSize = ModelSize.small,
-    model_params: Optional[LatchDir] = None,
+    model_params: Optional[LatchFile] = None,
     length: Optional[int] = int(250),
     temp: Optional[float] = 1.0,
     holdout: Optional[List[Union[str, LatchFile, LatchDir]]] = None,
@@ -275,7 +307,7 @@ def unirep(
     - `run_name`: Name of the run. The files will be stored in latch:///unirep/{run_name}/. If None, run_name will default to the current date and time.
     - `sequence`: Multiple strings or FASTA files containing a protein sequence.
     - `model_size`: Choice between using the 64, 256, or 1900-dimensional model.
-    - `model_params`: If not None, this is a LatchDir containing the model parameters in a model_weights.pkl file. If None, the model parameters will be downloaded from the cloud.
+    - `model_params`: If not None, this is a LatchFile containing the model parameters in a model_weights.pkl file. If None, the model parameters will be the default UniRep model.
     - `application`: A dropdown indicating which application to use.
         - `UniRep/UniRep Fusion`: Generate a protein representation.
         - `Babble`: Synthesize sequences from a seed.
@@ -285,6 +317,7 @@ def unirep(
     - `holdout`: (Optional) Strings/LatchFiles containing holdout sequences for Evotuning.
 
     ## Outputs
+    [TODO] update outputs to reflect the new workflow
     - `unirep/{run_name}/{protein_name}/unirep.np`: A numpy array containing the UniRep representation of the protein.
     - `unirep/{run_name}/{protein_name}/unirep_fusion.np`: A numpy array containing the UniRep Fusion representation of the protein.
     - `unirep/{run_name}/{protein_name}/babble{LENGTH}.txt`: A text file containing the babble from a seed protein.
@@ -328,7 +361,7 @@ def unirep(
             __metadata__:
                 display_name: Model Size
         model_params:
-            LatchDir containing the model_weights.pkl file. Use if you evotuned a new model.
+            LatchFile containing the model_weights.pkl file. Use if you evotuned a new model.
             __metadata__:
                 display_name: (Optional) Model Parameters
         application:
