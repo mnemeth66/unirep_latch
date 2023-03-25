@@ -113,7 +113,7 @@ class TestBabble(unittest.TestCase):
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
-                model_params=LatchFile("/root/test_scripts/test_data/small_model.pkl"),
+                model_params=LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl"),
                 run_name="custom model test",
                 length=10,
                 temp=1,
@@ -135,7 +135,7 @@ class TestBabble(unittest.TestCase):
             test_babble(
                     seqs_and_names=[[protein, 'seqs_protein1']],
                     model_size=ModelSize.large,
-                    model_params=LatchFile("/root/test_scripts/test_data/small_model.pkl"),
+                    model_params=LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl"),
                     run_name="custom model test",
                     length=10,
                     temp=1,
@@ -145,10 +145,10 @@ class TestBabble(unittest.TestCase):
 class TestModelConversion(unittest.TestCase):
 
     def test_pkl_to_tf_small(self):
-        model = "/root/test_scripts/test_data/small_model.pkl"
-        model_folder = pkl_to_model(model)
-        tf_model_folder = "/root/test_scripts/test_data/small_model_weights"
-
+        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl")
+        model_folder = pkl_to_model(model.local_path)
+        tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/small_model_weights").local_path
+        
         # Check that they have the same files and that each file has the correct numpy shape
         self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
         for file in os.listdir(model_folder):
@@ -161,9 +161,9 @@ class TestModelConversion(unittest.TestCase):
         shutil.rmtree(model_folder)   
     
     def test_pkl_to_tf_medium(self):
-        model = "/root/test_scripts/test_data/medium_model.pkl"
-        model_folder = pkl_to_model(model)
-        tf_model_folder = "/root/test_scripts/test_data/medium_model_weights"
+        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/medium_model.pkl")
+        model_folder = pkl_to_model(model.local_path)
+        tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/medium_model_weights").local_path
 
         # Check that they have the same files and that each file has the correct numpy shape
         self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
@@ -177,9 +177,9 @@ class TestModelConversion(unittest.TestCase):
         shutil.rmtree(model_folder)
 
     def test_pkl_to_tf_large(self):
-        model = "/root/test_scripts/test_data/large_model.pkl"
-        model_folder = pkl_to_model(model)
-        tf_model_folder = "/root/test_scripts/test_data/large_model_weights"
+        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/large_model.pkl")
+        model_folder = pkl_to_model(model.local_path)
+        tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/large_model_weights").local_path
 
         # Check that they have the same files and that each file has the correct numpy shape
         self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
@@ -191,6 +191,3 @@ class TestModelConversion(unittest.TestCase):
 
         # close model_folder
         shutil.rmtree(model_folder)
-
-# if __name__ == '__main__':
-#     unittest.main()
