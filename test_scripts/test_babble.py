@@ -16,7 +16,18 @@ from scripts.babble import pkl_to_model
 
 cas9 = "MKRNYILGLDIGITSVGYGIIDYETRDVIDAGVRLFKEANVENNEGRRSKRGARRLKRRRRHRIQRVKKLLFDYNLLTDHSELSGINPYEARVKGLSQKLSEEEFSAALLHLAKRRGVHNVNEVEEDTGNELSTKEQISRNSKALEEKYVAELQLERLKKDGEVRGSINRFKTSDYVKEAKQLLKVQKAYHQLDQSFIDTYIDLLETRRTYYEGPGEGSPFGWKDIKEWYEMLMGHCTYFPEELRSVKYAYNADLYNALNDLNNLVITRDENEKLEYYEKFQIIENVFKQKKKPTLKQIAKEILVNEEDIKGYRVTSTGKPEFTNLKVYHDIKDITARKEIIENAELLDQIAKILTIYQSSEDIQEELTNLNSELTQEEIEQISNLKGYTGTHNLSLKAINLILDELWHTNDNQIAIFNRLKLVPKKVDLSQQKEIPTTLVDDFILSPVVKRSFIQSIKVINAIIKKYGLPNDIIIELAREKNSKDAQKMINEMQKRNRQTNERIEEIIRTTGKENAKYLIEKIKLHDMQEGKCLYSLEAIPLEDLLNNPFNYEVDHIIPRSVSFDNSFNNKVLVKQEENSKKGNRTPFQYLSSSDSKISYETFKKHILNLAKGKGRISKTKKEYLLEERDINRFSVQKDFINRNLVDTRYATRGLMNLLRSYFRVNNLDVKVKSINGGFTSFLRRKWKFKKERNKGYKHHAEDALIIANADFIFKEWKKLDKAKKVMENQMFEEKQAESMPEIETEQEYKEIFITPHQIKHIKDFKDYKYSHRVDKKPNRELINDTLYSTRKDDKGNTLIVNNLNGLYDKDNDKLKKLINKSPEKLLMYHHDPQTYQKLKLIMEQYGDEKNPLYKYYEETGNYLTKYSKKDNGPVIKKIKYYGNKLNAHLDITDDYPNSRNKVVKLSLKPYRFDVYLDNGVYKFVTVKNLDVIKKENYYEVNSKCYEEAKKLKKISNQAEFIASFYNNDLIKINGELYRVIGVNNDLLNRIEVNMIDITYREYLENMNDKRPPRIIKTIASKTQSIKKYSTDILGNLYEVKSKKHPQIIKKG"
 
+# Get the underlying functions (forgoes the @task because I ran into issues with Flyte/Latch
+# types while running the task)
 test_babble = babble_task.__wrapped__
+
+def validate_babble(self, protein):
+    local_dir = Path("/root/outputs/")
+    # confirm the babble length is correct by processing the last value in the csv
+    with open(local_dir / 'babble_results.csv', 'r') as f:
+        lines = f.readlines()
+        babble_line = lines[-1]
+        babble = babble_line.split(',')[-1].strip()
+        self.assertEqual(len(babble), len(protein))
 
 class TestBabble(unittest.TestCase):
 
@@ -30,20 +41,12 @@ class TestBabble(unittest.TestCase):
                 length=10,
                 temp=1,
         )
-        # Check the outputs, confirm that the correct files were created
-        local_dir = Path("/root/outputs/")
-        files = os.listdir(local_dir)
+        validate_babble(self, protein)
         # Can't assert equal for now since it seems like the tests run concurrently,
         # rather than in the order they were run.
         # self.assertEqual(files, ['babble_results.csv', 'seqs_protein1'])
-
-        # confirm the babble length is correct by processing the last value in the csv
-        with open(local_dir / 'babble_results.csv', 'r') as f:
-            lines = f.readlines()
-            babble_line = lines[-1]
-            babble = babble_line.split(',')[-1].strip()
-            self.assertEqual(len(babble), 10)
-            self.assertEqual(babble[:len(protein)], protein)
+        # ie. it wouldn't be test_1 -> test_1 validate -> test_2 -> test_2 validate ..., but
+        # eg. test_1 -> test_2 --> test_1 validate -> test_3 -> test_2 validate ...
 
     def test_small_babble_length(self):
         protein = cas9
@@ -55,16 +58,7 @@ class TestBabble(unittest.TestCase):
                 length=10,
                 temp=1,
         )
-        # Check the outputs, confirm that the correct files were created
-        local_dir = Path("/root/outputs/")
-        files = os.listdir(local_dir)
-
-        # confirm the babble length is correct by processing the last value in the csv
-        with open(local_dir / 'babble_results.csv', 'r') as f:
-            lines = f.readlines()
-            babble_line = lines[-1]
-            babble = babble_line.split(',')[-1].strip()
-            self.assertEqual(len(babble), len(protein))
+        validate_babble(self, protein)
 
     def test_small_babble_length2(self):
         protein = 'LATCHLATCH'
@@ -76,16 +70,7 @@ class TestBabble(unittest.TestCase):
                 length=10,
                 temp=1,
         )
-        # Check the outputs, confirm that the correct files were created
-        local_dir = Path("/root/outputs/")
-        files = os.listdir(local_dir)
-
-        # confirm the babble length is correct by processing the last value in the csv
-        with open(local_dir / 'babble_results.csv', 'r') as f:
-            lines = f.readlines()
-            babble_line = lines[-1]
-            babble = babble_line.split(',')[-1].strip()
-            self.assertEqual(len(babble), len(protein))
+        validate_babble(self, protein)
 
     def test_invalid_amino_acids(self):
         protein = 'LATCHBIO'
@@ -97,16 +82,8 @@ class TestBabble(unittest.TestCase):
                 length=10,
                 temp=1,
         )
-        # Check the outputs, confirm that the correct files were created
-        local_dir = Path("/root/outputs/")
-        files = os.listdir(local_dir)
-
-        # confirm an invalid output because of invalid amino acids
-        with open(local_dir / 'babble_results.csv', 'r') as f:
-            lines = f.readlines()
-            babble_line = lines[-1]
-            babble = babble_line.split(',')[-1].strip()
-            self.assertEqual(babble, 'invalid sequence')
+        expected_invalid_protein = 'invalid sequence'
+        validate_babble(self, expected_invalid_protein)
 
     def test_model_param_input(self):
         protein = 'LATCH'
@@ -118,16 +95,7 @@ class TestBabble(unittest.TestCase):
                 length=10,
                 temp=1,
         )
-        # Check the outputs, confirm that the correct files were created
-        local_dir = Path("/root/outputs/")
-        files = os.listdir(local_dir)
-
-        # confirm an invalid output because of invalid amino acids
-        with open(local_dir / 'babble_results.csv', 'r') as f:
-            lines = f.readlines()
-            babble_line = lines[-1]
-            babble = babble_line.split(',')[-1].strip()
-            self.assertEqual(len(babble), 10)
+        validate_babble(self, protein)
 
     def test_model_mismatched_size(self):
         protein = 'LATCH'
@@ -142,52 +110,31 @@ class TestBabble(unittest.TestCase):
             )
         # print(cm)
 
+
+def validate_pkl_to_model(self, pkl_model, tf_model_folder):
+    model_folder = pkl_to_model(pkl_model.local_path)
+    # Check that they have the same files and that each file has the correct numpy shape
+    self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
+    for file in os.listdir(model_folder):
+        self.assertEqual(
+                np.load(os.path.join(model_folder, file)).shape,
+                np.load(os.path.join(tf_model_folder, file)).shape,
+        ) 
+    shutil.rmtree(model_folder)
+
 class TestModelConversion(unittest.TestCase):
 
     def test_pkl_to_tf_small(self):
-        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl")
-        model_folder = pkl_to_model(model.local_path)
+        pkl_model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl")
         tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/small_model_weights").local_path
-        
-        # Check that they have the same files and that each file has the correct numpy shape
-        self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
-        for file in os.listdir(model_folder):
-            self.assertEqual(
-                    np.load(os.path.join(model_folder, file)).shape,
-                    np.load(os.path.join(tf_model_folder, file)).shape,
-            )       
-
-        # close model_folder
-        shutil.rmtree(model_folder)   
+        validate_pkl_to_model(self, pkl_model, tf_model_folder)
     
     def test_pkl_to_tf_medium(self):
-        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/medium_model.pkl")
-        model_folder = pkl_to_model(model.local_path)
+        pkl_model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/medium_model.pkl")
         tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/medium_model_weights").local_path
-
-        # Check that they have the same files and that each file has the correct numpy shape
-        self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
-        for file in os.listdir(model_folder):
-            self.assertEqual(
-                    np.load(os.path.join(model_folder, file)).shape,
-                    np.load(os.path.join(tf_model_folder, file)).shape,
-            )
-        
-        # close model_folder
-        shutil.rmtree(model_folder)
+        validate_pkl_to_model(self, pkl_model, tf_model_folder)
 
     def test_pkl_to_tf_large(self):
-        model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/large_model.pkl")
-        model_folder = pkl_to_model(model.local_path)
+        pkl_model = LatchFile("s3://latch-public/test-data/3192/unirep_test_data/large_model.pkl")
         tf_model_folder = LatchDir("s3://latch-public/test-data/3192/unirep_test_data/large_model_weights").local_path
-
-        # Check that they have the same files and that each file has the correct numpy shape
-        self.assertEqual(len(os.listdir(model_folder)), len(os.listdir(tf_model_folder)))
-        for file in os.listdir(model_folder):
-            self.assertEqual(
-                    np.load(os.path.join(model_folder, file)).shape,
-                    np.load(os.path.join(tf_model_folder, file)).shape,
-            )
-
-        # close model_folder
-        shutil.rmtree(model_folder)
+        validate_pkl_to_model(self, pkl_model, tf_model_folder)
