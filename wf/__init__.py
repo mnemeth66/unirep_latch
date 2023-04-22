@@ -12,16 +12,51 @@ import pickle as pkl
 import shutil
 import time
 
-from latch import large_task, medium_task, small_task, custom_task, workflow, create_conditional_section
+from latch import (
+    large_task,
+    medium_task,
+    small_task,
+    custom_task,
+    workflow,
+    create_conditional_section,
+)
 from latch.types import LatchDir, LatchFile
 from latch.resources.launch_plan import LaunchPlan
 from latch.functions.messages import message
 from typing import Optional, List, Union, Tuple
 
-# Allow extended amino acids: https://en.wikipedia.org/wiki/FASTA_format#Sequence_representation 
-aas = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 
-        'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 
-        'W', 'X', 'Y', 'Z', '*', '-']
+# Allow extended amino acids: https://en.wikipedia.org/wiki/FASTA_format#Sequence_representation
+aas = [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "*",
+    "-",
+]
+
 
 class Application(Enum):
     protein_rep = "UniRep/UniRep Fusion"
@@ -29,16 +64,19 @@ class Application(Enum):
     evotune = "Evotune"
     # variant_prediction = "Variant Fitness Prediction"
 
+
 class ModelSize(Enum):
     small = "64"
     medium = "256"
     large = "1900"
+
 
 @small_task
 def check_enum(
     application: Application,
 ) -> Tuple[bool, bool, bool]:
     return tuple([application == a for a in Application])
+
 
 @small_task
 def get_seqs_from_inputs(
@@ -56,23 +94,25 @@ def get_seqs_from_inputs(
     for seq in sequence:
         try:
             if isinstance(seq, str):
-                print('found a string input')
+                print("found a string input")
                 # Make sure the sequence is valid
                 if not set(seq.upper()).issubset(set(aas)):
                     raise ValueError(f"Invalid sequence: {seq}")
 
                 # Give unnamed sequence a hash
-                seq_name = hashlib.sha256(seq.encode('utf-8')).hexdigest()[:10]
-                seqs.append([seq, seq_name]) 
+                seq_name = hashlib.sha256(seq.encode("utf-8")).hexdigest()[:10]
+                seqs.append([seq, seq_name])
 
             elif isinstance(seq, LatchFile):
-                print('found a latchfile input')
+                print("found a latchfile input")
                 latchfile_paths.append(Path(seq).resolve())
-            
+
             elif isinstance(seq, LatchDir):
-                print('found a LatchDir input')
+                print("found a LatchDir input")
                 local_path = Path(seq).resolve()
-                fasta_files = [f.resolve() for f in local_path.iterdir() if f.suffix == '.fasta']
+                fasta_files = [
+                    f.resolve() for f in local_path.iterdir() if f.suffix == ".fasta"
+                ]
                 latchfile_paths.extend(fasta_files)
         except Exception as e:
             print(e)
@@ -81,22 +121,23 @@ def get_seqs_from_inputs(
     print(f"unrolling {len(latchfile_paths)} latchfiles")
     for latchfile_path in latchfile_paths:
         output_filename = latchfile_path.stem
-        
+
         # Fasta file
-        if latchfile_path.suffix == '.fasta':
+        if latchfile_path.suffix == ".fasta":
             for record in SeqIO.parse(latchfile_path, "fasta"):
                 seqs.append([str(record.seq), output_filename + "_" + str(record.id)])
-        
+
         # Text file
-        elif latchfile_path.suffix == '.txt':
-            with open(latchfile_path, 'r') as f:
+        elif latchfile_path.suffix == ".txt":
+            with open(latchfile_path, "r") as f:
                 for line in f:
                     seq = line.strip()
-                    seq_name = hashlib.sha256(seq.encode('utf-8')).hexdigest()[:10]
+                    seq_name = hashlib.sha256(seq.encode("utf-8")).hexdigest()[:10]
                     seqs.append([seq, output_filename + "_" + seq_name])
 
         # CSV file
     return seqs
+
 
 @small_task
 def get_holdouts(
@@ -118,6 +159,7 @@ def get_holdouts(
             return seqs
     return None
 
+
 @custom_task(8, 32)
 def evotune_task(
     seqs_and_names: List[List[str]],
@@ -126,13 +168,19 @@ def evotune_task(
     run_name: str,
     holdouts: Optional[List[str]],
 ) -> LatchDir:
-    message(typ='info', data={'title': 'Application: Evotune', 'body': 'Evolutionary tuning of UniRep using your input sequences.'})
+    message(
+        typ="info",
+        data={
+            "title": "Application: Evotune",
+            "body": "Evolutionary tuning of UniRep using your input sequences.",
+        },
+    )
     # Parameters
     local_dir = Path("/root/outputs/")
     local_dir.mkdir(exist_ok=True)
     local_dir = str(local_dir)
     remote_dir = "latch:///unirep/" + run_name + "/"
-    
+
     mlstm_size = int(model_size.value)
     if model_size == 64:
         from jax_unirep.evotuning_models import mlstm64 as mlstm
@@ -142,7 +190,7 @@ def evotune_task(
         from jax_unirep.evotuning_models import mlstm1900 as mlstm
     else:
         raise ValueError(f"Invalid model size: {mlstm_size}")
-    
+
     # Get parameters
     init_func, model_func = mlstm()
     if model_params is not None:
@@ -160,10 +208,11 @@ def evotune_task(
         n_splits=min(len(seqs_and_names), 5),
         out_dom_seqs=holdouts,
     )
-    
+
     # Save the evotuned parameters
     jax_unirep.utils.dump_params(evotuned_params, local_dir)
     return LatchDir(local_dir, remote_dir)
+
 
 @custom_task(8, 32)
 def rep_task(
@@ -172,9 +221,12 @@ def rep_task(
     model_params: Optional[LatchFile],
     run_name: str,
 ) -> LatchDir:
-    message(typ='info', data={'title': 'Application: Rep', 'body': 'Getting protein representations'})
+    message(
+        typ="info",
+        data={"title": "Application: Rep", "body": "Getting protein representations"},
+    )
     # Parameters
-    local_dir = Path("/root/outputs/")
+    local_dir = Path(f"/root/outputs/{run_name}")
     local_dir.mkdir(exist_ok=True)
     local_dir = str(local_dir)
     remote_dir = "latch:///unirep/" + run_name + "/"
@@ -186,89 +238,29 @@ def rep_task(
 
     # Extract model parameters from pkl file
     from scripts.babble import pkl_to_model
+
     model_path = "None"
     if model_params is not None:
         model_path = pkl_to_model(model_params.local_path)
 
     # Run babble
     script_path = "scripts/rep.py"
-    subprocess.run(f"conda run -n unirep {script_path} {model_size.value} {local_dir} seqs.csv {model_path}".split(), check=True)
+    subprocess.run(
+        [
+            "conda",
+            "run",
+            "-n",
+            "unirep",
+            script_path,
+            model_size.value,
+            local_dir,
+            "seqs.csv",
+            model_path,
+        ],
+        check=True,
+    )
     return LatchDir(local_dir, remote_dir)
 
-    ####### Jax-Unirep #######
-    # Get the reps
-    ## Load the model params
-    params = None
-    mlstm_size = int(model_size.value)
-    if model_params is not None:
-        with open(model_params.local_path, "rb") as f:
-            params = pkl.load(f)
-    else:
-        params = jax_unirep.utils.load_params(paper_weights=mlstm_size)
-        
-    params = params[1]
-    print(type(params), len(params), params.keys())
-    seqs = [seq_and_name[0] for seq_and_name in seqs_and_names]
-    print('getting the reps')
-
-    def chunker(seq, size):
-        return (seq[pos:pos + size] for pos in range(0, len(seq), size))
-    h_final_l, c_final_l, h_avg_l = [], [], []
-    start = time.time()
-    # time.sleep(15)
-    # for seqs in chunker(data.)
-    h_avg, h_final, c_final = jax_unirep.get_reps(seqs, params=None, mlstm_size=mlstm_size)
-    end = time.time()
-    print(f"took {end - start} seconds to get the reps")
-    print('got the reps')
-    # Save the reps
-    for i in range(len(seqs_and_names)):
-        seq, name = seqs_and_names[i][0], seqs_and_names[i][1]
-        # Make folder in local_dir for each sequence
-        local_seq_dir = os.path.join(local_dir, name)
-        if not os.path.exists(local_seq_dir):
-            os.mkdir(local_seq_dir)
-        
-        # Save seq as 'original_seq.txt' in local_seq_dir
-        with open(os.path.join(local_seq_dir, "original_seq.txt"), "w") as f:
-            f.write(seq)
-
-        # Write avg_hidden to output_name + '_unirep'
-        np.save(os.path.join(local_seq_dir + '/unirep'), h_avg[i])
-
-        # Write avg_hidden, final_hidden, final_cell to output_name + '_unirep_fusion
-        np.save(os.path.join(local_seq_dir + '/unirep_fusion'), np.stack((h_avg[i], h_final[i], c_final[i])))
-        
-        print('saved files')
-    # Save h_avg as unireps.npy in local_dir
-    np.save(os.path.join(local_dir, "unireps"), h_avg)
-
-    # Write the sequence names to output_name + 'sequences.txt' and output_name + 'sequences.fasta'
-    with open(os.path.join(local_dir, "sequences.txt"), "w") as f:
-        for seq_and_name in seqs_and_names:
-            f.write(seq_and_name[1] + "\n")
-
-    with open(os.path.join(local_dir, "sequences.fasta"), "w") as f:
-        for seq_and_name in seqs_and_names:
-            f.write(">" + seq_and_name[1] + "\n" + seq_and_name[0] + "\n")
-
-    # Write a little summary of results
-    with open(os.path.join(local_dir, "summary.txt"), "w") as f:
-        f.write(f"Your outputs are stored in several formats. \n\
-The list of input sequences are stored in the 'sequences.txt' and 'sequences.fasta' files. \n\
-The aggregated hidden representations are stored in the 'unireps.npy' file, indexed in the same \n\
-order as the input sequences. 'unireps.npy' should be a ({len(seqs_and_names)}, {model_size.value}) array.\n\
-There is a folder for each input sequence. In each folder is the input sequence, there is a\n\
-unirep representation, as well as the UniRep Fusion representation (a larger, slightly better representation). \n\
--------------------------------------------------- \n\
-Model size: " + str(model_size.value) + "\n ")
-        if model_params is not None:
-            f.write("Model params: " + str(model_params.local_path) + "\n ")
-
-    # Return LatchDir
-    return LatchDir(local_dir, remote_dir)
-
-    ####### /Jax-Unirep #######
 
 @custom_task(8, 32)
 def babble_task(
@@ -281,11 +273,17 @@ def babble_task(
 ) -> LatchDir:
     """
     The reason we have to run this in a subprocess rather than calling a python function is because
-    we're using the native UniRep babbler, which includes a very old version of tensorflow which is 
+    we're using the native UniRep babbler, which includes a very old version of tensorflow which is
     incompatible with the latch package. So we need to run the babbler in a subprocess, with a separate
     python interpreter.
     """
-    message(typ='info', data={'title': 'Application: Babble', 'body': f'Babbling new protein of length {length} from your input sequences.'})
+    message(
+        typ="info",
+        data={
+            "title": "Application: Babble",
+            "body": f"Babbling new protein of length {length} from your input sequences.",
+        },
+    )
     # Parameters
     local_dir = Path(f"/root/outputs/{run_name}/")
     local_dir.mkdir(exist_ok=True, parents=True)
@@ -299,6 +297,7 @@ def babble_task(
 
     # Extract model parameters from pkl file
     from scripts.babble import pkl_to_model
+
     model_path = "None"
     if model_params is not None:
         model_path = pkl_to_model(model_params.local_path)
@@ -306,20 +305,24 @@ def babble_task(
     # Run babble
     script_path = "scripts/babble.py"
     # subprocess.run(f"conda run -n unirep '{script_path}' {model_size.value} '{local_dir}' {length} {temp} seqs.csv '{model_path}'".split(), check=True)
-    subprocess.run([
-        "conda",
-        "run",
-        "-n",
-        "unirep",
-        script_path,
-        model_size.value,
-        local_dir,
-        str(length),
-        str(temp),
-        "seqs.csv",
-        model_path
-    ], check=True)
+    subprocess.run(
+        [
+            "conda",
+            "run",
+            "-n",
+            "unirep",
+            script_path,
+            model_size.value,
+            local_dir,
+            str(length),
+            str(temp),
+            "seqs.csv",
+            model_path,
+        ],
+        check=True,
+    )
     return LatchDir(local_dir, remote_dir)
+
 
 @workflow
 def unirep(
@@ -331,8 +334,7 @@ def unirep(
     length: Optional[int] = int(250),
     temp: Optional[float] = 1.0,
     holdout: Optional[List[Union[str, LatchFile, LatchDir]]] = None,
-    ) -> LatchDir:
-
+) -> LatchDir:
     """
     UniRep
     ----
@@ -344,10 +346,10 @@ def unirep(
 
     This workflow also benefits from the work done by Eric J. Ma and Arkadij Kummer to reproduce and extend Unirep
     using Jax. From their work we use the following features:
-    - "evotuning": further tuning the UniRep model on user-provided sequences 
+    - "evotuning": further tuning the UniRep model on user-provided sequences
     - [future] "sampling": sampling from seed sequences using user-defined scoring functions
-  
-    # This Workflow 
+
+    # This Workflow
     This workflow gives the user access to the following applications:
     - generating protein representations from the mLSTM model
     - "babbling": using generative modeling to synthesize sequences from a seed
@@ -362,7 +364,7 @@ def unirep(
         - `UniRep/UniRep Fusion`: Generate a protein representation.
         - `Babble`: Synthesize sequences from a seed.
         - `Evotuning`: Further tune the UniRep model on user-provided sequences.
-    - `length`: (Default 250) An integer indicating the length of the sequence to generate (including the original protein length). 
+    - `length`: (Default 250) An integer indicating the length of the sequence to generate (including the original protein length).
     - `temperature`: (Default 1) A float between 0 and 1 indicating how noisy the babble should be. 1 is the noisiest.
     - `holdout`: (Optional) Strings/LatchFiles containing holdout sequences for Evotuning.
 
@@ -396,7 +398,7 @@ def unirep(
         display_name: UniRep
         author:
             name: Church Lab
-            email: 
+            email:
             github:
         repository: https://github.com/churchlab/UniRep
         license:
@@ -434,21 +436,24 @@ def unirep(
             Holdout sequences for evotuning.
             __metadata__:
                 display_name: (Evotuning) Holdout
-        
+
     """
     seqs_and_names = get_seqs_from_inputs(sequence=sequence)
     (rep, babble, evotune) = check_enum(application=application)
     holdouts = get_holdouts(sequence=holdout)
     return (
         create_conditional_section("application")
-        .if_((rep.is_true())).then(
+        .if_((rep.is_true()))
+        .then(
             rep_task(
                 seqs_and_names=seqs_and_names,
                 model_size=model_size,
                 model_params=model_params,
                 run_name=run_name,
-                ))
-        .elif_((babble.is_true())).then(
+            )
+        )
+        .elif_((babble.is_true()))
+        .then(
             babble_task(
                 seqs_and_names=seqs_and_names,
                 model_size=model_size,
@@ -456,14 +461,18 @@ def unirep(
                 run_name=run_name,
                 length=length,
                 temp=temp,
-                ))
-        .elif_((evotune.is_true())).then(
+            )
+        )
+        .elif_((evotune.is_true()))
+        .then(
             evotune_task(
                 seqs_and_names=seqs_and_names,
                 model_size=model_size,
                 model_params=model_params,
                 run_name=run_name,
                 holdouts=holdouts,
-                ))
-        .else_().fail("Variant Prediction isn't implemented yet.")
+            )
+        )
+        .else_()
+        .fail("Variant Prediction isn't implemented yet.")
     )
