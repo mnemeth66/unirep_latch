@@ -9,8 +9,10 @@ from datetime import date
 import subprocess
 import hashlib
 import pickle as pkl
+import shutil
+import time
 
-from latch import large_task, medium_task, small_task, workflow, create_conditional_section
+from latch import large_task, medium_task, small_task, custom_task, workflow, create_conditional_section
 from latch.types import LatchDir, LatchFile
 from latch.resources.launch_plan import LaunchPlan
 from latch.functions.messages import message
@@ -116,7 +118,7 @@ def get_holdouts(
             return seqs
     return None
 
-@small_task
+@custom_task(8, 32)
 def evotune_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
@@ -144,10 +146,12 @@ def evotune_task(
     # Get parameters
     init_func, model_func = mlstm()
     if model_params is not None:
-        params = jax_unirep.utils.load_params(folderpath=model_params.local_path)
+        with open(model_params.local_path, "rb") as f:
+            params = pkl.load(f)
     else:
         params = jax_unirep.utils.load_params(paper_weights=mlstm_size)
 
+    params = params[1]
     # Evotuning
     _, evotuned_params = jax_unirep.evotune(
         sequences=[s[0] for s in seqs_and_names],
@@ -161,7 +165,7 @@ def evotune_task(
     jax_unirep.utils.dump_params(evotuned_params, local_dir)
     return LatchDir(local_dir, remote_dir)
 
-@small_task
+@custom_task(8, 32)
 def rep_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
@@ -175,17 +179,48 @@ def rep_task(
     local_dir = str(local_dir)
     remote_dir = "latch:///unirep/" + run_name + "/"
 
+    # Write seqs to 'seqs.csv' file
+    with open("seqs.csv", "w") as f:
+        for seq_and_name in seqs_and_names:
+            f.write(f"{seq_and_name[0]},{seq_and_name[1]}\n")
+
+    # Extract model parameters from pkl file
+    from scripts.babble import pkl_to_model
+    model_path = "None"
+    if model_params is not None:
+        model_path = pkl_to_model(model_params.local_path)
+
+    # Run babble
+    script_path = "scripts/rep.py"
+    subprocess.run(f"conda run -n unirep {script_path} {model_size.value} {local_dir} seqs.csv {model_path}".split(), check=True)
+    return LatchDir(local_dir, remote_dir)
+
+    ####### Jax-Unirep #######
     # Get the reps
     ## Load the model params
     params = None
     mlstm_size = int(model_size.value)
     if model_params is not None:
-        params = jax_unirep.utils.load_params(folderpath=model_params.local_path)
+        with open(model_params.local_path, "rb") as f:
+            params = pkl.load(f)
     else:
         params = jax_unirep.utils.load_params(paper_weights=mlstm_size)
+        
+    params = params[1]
+    print(type(params), len(params), params.keys())
     seqs = [seq_and_name[0] for seq_and_name in seqs_and_names]
-    h_avg, h_final, c_final = jax_unirep.get_reps(seqs, params=params, mlstm_size=mlstm_size)
+    print('getting the reps')
 
+    def chunker(seq, size):
+        return (seq[pos:pos + size] for pos in range(0, len(seq), size))
+    h_final_l, c_final_l, h_avg_l = [], [], []
+    start = time.time()
+    # time.sleep(15)
+    # for seqs in chunker(data.)
+    h_avg, h_final, c_final = jax_unirep.get_reps(seqs, params=None, mlstm_size=mlstm_size)
+    end = time.time()
+    print(f"took {end - start} seconds to get the reps")
+    print('got the reps')
     # Save the reps
     for i in range(len(seqs_and_names)):
         seq, name = seqs_and_names[i][0], seqs_and_names[i][1]
@@ -233,7 +268,9 @@ Model size: " + str(model_size.value) + "\n ")
     # Return LatchDir
     return LatchDir(local_dir, remote_dir)
 
-@small_task
+    ####### /Jax-Unirep #######
+
+@custom_task(8, 32)
 def babble_task(
     seqs_and_names: List[List[str]],
     model_size: ModelSize,
@@ -250,8 +287,8 @@ def babble_task(
     """
     message(typ='info', data={'title': 'Application: Babble', 'body': f'Babbling new protein of length {length} from your input sequences.'})
     # Parameters
-    local_dir = Path("/root/outputs/")
-    local_dir.mkdir(exist_ok=True)
+    local_dir = Path(f"/root/outputs/{run_name}/")
+    local_dir.mkdir(exist_ok=True, parents=True)
     local_dir = str(local_dir)
     remote_dir = "latch:///unirep/" + run_name + "/"
 
@@ -268,7 +305,20 @@ def babble_task(
 
     # Run babble
     script_path = "scripts/babble.py"
-    subprocess.run(f"conda run -n unirep {script_path} {model_size.value} {local_dir} {length} {temp} seqs.csv {model_path}".split(), check=True)
+    # subprocess.run(f"conda run -n unirep '{script_path}' {model_size.value} '{local_dir}' {length} {temp} seqs.csv '{model_path}'".split(), check=True)
+    subprocess.run([
+        "conda",
+        "run",
+        "-n",
+        "unirep",
+        script_path,
+        model_size.value,
+        local_dir,
+        str(length),
+        str(temp),
+        "seqs.csv",
+        model_path
+    ], check=True)
     return LatchDir(local_dir, remote_dir)
 
 @workflow

@@ -20,91 +20,109 @@ cas9 = "MKRNYILGLDIGITSVGYGIIDYETRDVIDAGVRLFKEANVENNEGRRSKRGARRLKRRRRHRIQRVKKLLF
 # types while running the task)
 test_babble = babble_task.__wrapped__
 
-def validate_babble(self, protein):
-    local_dir = Path("/root/outputs/")
+def validate_babble(self, length, run_name=''):
+    local_dir = Path(f"/root/outputs/{run_name}")
     # confirm the babble length is correct by processing the last value in the csv
     with open(local_dir / 'babble_results.csv', 'r') as f:
         lines = f.readlines()
         babble_line = lines[-1]
         babble = babble_line.split(',')[-1].strip()
-        self.assertEqual(len(babble), len(protein))
+        self.assertEqual(len(babble), length)
 
 class TestBabble(unittest.TestCase):
 
+    def test_babble_task(self):
+        protein = 'LATCH'
+        run_name = "test babble task"
+        length = 10
+        babble_task(
+            seqs_and_names=[[protein, 'seqs_protein1']],
+            model_size=ModelSize.small,
+            model_params=None,
+            run_name=run_name,
+            length=length,
+            temp=1,
+        )
+        validate_babble(self, length, run_name)
+
     def test_basic_valid_babble(self):
         protein = 'LATCH'
+        run_name = "basic test"
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
                 model_params=None,
-                run_name="basic test",
+                run_name=run_name,
                 length=10,
                 temp=1,
         )
-        validate_babble(self, protein)
-        # Can't assert equal for now since it seems like the tests run concurrently,
-        # rather than in the order they were run.
-        # self.assertEqual(files, ['babble_results.csv', 'seqs_protein1'])
-        # ie. it wouldn't be test_1 -> test_1 validate -> test_2 -> test_2 validate ..., but
-        # eg. test_1 -> test_2 --> test_1 validate -> test_3 -> test_2 validate ...
+        validate_babble(self, 10, run_name)
 
     def test_small_babble_length(self):
         protein = cas9
+        run_name = "small babble length test"
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
                 model_params=None,
-                run_name="small babble length test",
+                run_name=run_name,
                 length=10,
                 temp=1,
         )
-        validate_babble(self, protein)
+        expected_length = len(protein)
+        validate_babble(self, expected_length, run_name)
 
-    def test_small_babble_length2(self):
+    def test_babble_same_length(self):
         protein = 'LATCHLATCH'
+        run_name = "babble same length test"
+        length = 10
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
                 model_params=None,
-                run_name="smaller babble length test",
-                length=10,
+                run_name=run_name,
+                length=length,
                 temp=1,
         )
-        validate_babble(self, protein)
+        validate_babble(self, length, run_name)
 
     def test_invalid_amino_acids(self):
         protein = 'LATCHBIO'
+        run_name = "invalid amino acids test"
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
                 model_params=None,
-                run_name="invalid aa test",
+                run_name=run_name,
                 length=10,
                 temp=1,
         )
         expected_invalid_protein = 'invalid sequence'
-        validate_babble(self, expected_invalid_protein)
+        validate_babble(self, len(expected_invalid_protein), run_name)
 
     def test_model_param_input(self):
         protein = 'LATCH'
+        run_name = "custom model test"
+        length = 10
         test_babble(
                 seqs_and_names=[[protein, 'seqs_protein1']],
                 model_size=ModelSize.small,
                 model_params=LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl"),
-                run_name="custom model test",
-                length=10,
+                run_name=run_name,
+                length=length,
                 temp=1,
         )
-        validate_babble(self, protein)
+        validate_babble(self, length, run_name)
 
     def test_model_mismatched_size(self):
         protein = 'LATCH'
+        run_name = "mismatched model size test"
         with self.assertRaises(CalledProcessError) as cm:
             test_babble(
                     seqs_and_names=[[protein, 'seqs_protein1']],
                     model_size=ModelSize.large,
                     model_params=LatchFile("s3://latch-public/test-data/3192/unirep_test_data/small_model.pkl"),
-                    run_name="custom model test",
+                    run_name=run_name,
                     length=10,
                     temp=1,
             )
